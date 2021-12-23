@@ -1,0 +1,209 @@
+---
+title: "DM_Project_Prediction"
+author: "Nam Tran"
+date: "11/27/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readr); library(tidyverse); library(dplyr); library(psych); library(PerformanceAnalytics); library(skimr); library(lessR); library(ggplot2); library(gridExtra); library(fastDummies); library(forecast); library(BMA); library(stats); library(olsrr); library(MASS); library(kableExtra); library(car); library(broom); library(glmulti)
+```
+
+```{r}
+CLV.data <- read.csv("CLV_Cleaned_data.csv")
+```
+
+```{r}
+colnames(CLV.data)
+```
+
+## Partition Data: 60% Train Data, 40% Valid Data
+```{r}
+set.seed(1)
+## partitioning into training (60%), validation (40%)
+# randomly sample 60% of the row IDs for training
+train.index <- sample(rownames(CLV.data), dim(CLV.data)[1]*0.6)
+valid.index <- setdiff(rownames(CLV.data), train.index)
+
+train.df <- CLV.data[train.index, -c(2,8)]
+valid.df <- CLV.data[valid.index, -c(2,8)]
+```
+
+```{r}
+dim(train.df)
+dim(valid.df)
+```
+
+## BUILD MODEL
+
+### MODEL 1: Model with only significant variables chosen from all variables model. 
+
+```{r}
+# First, we run model with all variables that are in cleaned dataset to observe how these variables performance in model.
+CLV.lm <- lm(Customer.Lifetime.Value ~ ., data = train.df)
+summary(CLV.lm)
+```
+
+Adjusted R-squared = 0.647, this model can explain 64.7% of records and the RMSE = 3882. But the model show there are only 8 variables significant(5% of significant level):
+
+ * Monthly.Premium.Auto
+ * EmploymentStatus_Employed
+ * Gender_M
+ * Num.of.Complaints_More.than.3
+ * New.Num.of.Policies_2
+ * New.Num.of.Policies_More.than.2
+ * New.Education_High.School.or.Below
+ * New.Education_Higher.Master 
+
+```{r}
+select.var.signi <- c("Customer.Lifetime.Value","Monthly.Premium.Auto", "EmploymentStatus_Employed", "Gender_M",
+                    "Num.of.Complaints_More.than.3", "New.Num.of.Policies_2", "New.Num.of.Policies_More.than.2", "New.Education_High.School.or.Below",
+                    "New.Education_Higher.Master")
+
+lm.1 <- lm(Customer.Lifetime.Value ~ ., data = train.df[,select.var.signi])
+summary(lm.1)
+
+# Prediction
+lm1.pred.tr <- predict(lm.1)
+lm1.pred.va <- predict(lm.1, newdata = valid.df)
+
+# Evaluate performance:
+Accuracy.lm1.tr <- accuracy(lm1.pred.tr, train.df$Customer.Lifetime.Value)   # train data
+Accuracy.lm1.va <- accuracy(lm1.pred.va, valid.df$Customer.Lifetime.Value)   # Valid data
+```
+
+Model with 8 significant variables chosen from model with all variables: Adjusted R-squared:  0.6462, Residual standard error: 3887
+
+### MODEL 2: Using Bayesian Model Average (BMA) technique for choosing Variables
+
+We apply BMA algorithm that use BIC criteria to adjust models with different variables. We need to install package BMA first, then we use function “bicreg” to find out feasible models with BIC criteria. 
+
+```{r}
+bma.X <- train.df[,-1]
+bma.Y <- train.df$Customer.Lifetime.Value
+
+bma.search <- bicreg(bma.X, bma.Y, strict = FALSE, OR = 20, maxCol = 34)
+summary(bma.search)
+```
+
+
+
+BMA process suggests a model having r2 = 0.647 with 6 variables: 
+
+ * Monthly.Premium.Auto
+ * EmploymentStatus_Employed
+ * Num.of.Complaints_More.than.3
+ * New.Num.of.Policies_2
+ * New.Num.of.Policies_More.than.2
+ * New.Car.Class_Normal.Vehicle
+
+```{r}
+select.var.BMA <- c("Customer.Lifetime.Value","Monthly.Premium.Auto", "EmploymentStatus_Employed", "Num.of.Complaints_More.than.3", "New.Num.of.Policies_2", "New.Num.of.Policies_More.than.2", "New.Car.Class_Normal.Vehicle")
+
+lm.BMA <- lm(Customer.Lifetime.Value ~ ., data = train.df[,select.var.BMA])
+summary(lm.BMA)
+```
+Model with 6 variables that BMA method choose has adj r2 = 0.6463, Residual standard error: 3886
+
+```{r}
+# Prediction
+BMA.pred.tr <- predict(lm.BMA)
+BMA.pred.va <- predict(lm.BMA, newdata = valid.df)
+
+# Evaluate performance:
+Accuracy.BMA.tr <-accuracy(BMA.pred.tr, train.df$Customer.Lifetime.Value)   # train data
+Accuracy.BMA.va <-accuracy(BMA.pred.va, valid.df$Customer.Lifetime.Value)   # Valid data
+``` 
+
+
+### MODEL 3: Using STEPWISE for choosing Variables
+```{r}
+CLV.lm.step.both <- step(CLV.lm, direction = "both")
+CLV.lm.step.both$coefficients
+```
+
+STEPWISE chose 13 variables:
+
+ * Monthly.Premium.Auto
+ * Months.Since.Policy.Inception
+ * EmploymentStatus_Employed
+ * EmploymentStatus_Medical.Leave
+ * Gender_M
+ * Policy.Type_Special.Auto
+ * Vehicle.Size_Small
+ * Num.of.Complaints_More.than.3
+ * New.Num.of.Policies_2
+ * New.Num.of.Policies_More.than.2
+ * New.Car.Class_Normal.Vehicle
+ * New.Education_High.School.or.Below
+ * New.Education_Higher.Master
+
+```{r}
+select.var.SWB <- c("Customer.Lifetime.Value", "Monthly.Premium.Auto", "Months.Since.Policy.Inception", "EmploymentStatus_Employed", "EmploymentStatus_Medical.Leave", "Gender_M", "Policy.Type_Special.Auto", "Vehicle.Size_Small", "Num.of.Complaints_More.than.3", "New.Num.of.Policies_2", "New.Num.of.Policies_More.than.2", "New.Car.Class_Normal.Vehicle", "New.Education_High.School.or.Below", "New.Education_Higher.Master" )
+
+lm.SWB <- lm(Customer.Lifetime.Value ~ ., data = train.df[,select.var.SWB])
+summary(lm.SWB)
+```
+
+This  STEPWISE mmodel has Adj-r2 = 0.6478, Residual standard error: 3878
+
+```{r}
+# Prediction
+SWB.pred.tr <- predict(lm.SWB)
+SWB.pred.va <- predict(lm.SWB, newdata = valid.df)
+
+# Evaluate performance:
+Accuracy.SWB.tr <-accuracy(SWB.pred.tr, train.df$Customer.Lifetime.Value)   # train data
+Accuracy.SWB.va <-accuracy(SWB.pred.va, valid.df$Customer.Lifetime.Value)   # Valid data
+```
+
+## Measuring and Choosing Models:
+
+```{r}
+tb.sum.va <- data.frame("model"=c("lm1","BMA","SWB"),
+           rbind(Accuracy.lm1.va, Accuracy.BMA.va, Accuracy.SWB.va), "num.var" =c(8,6,13), "adj r2" = c(0.6462,0.6463,0.6478))
+
+tb.sum.tr <- data.frame("model"=c("lm1","BMA","SWB"),
+           rbind(Accuracy.lm1.tr, Accuracy.BMA.tr, Accuracy.SWB.tr))
+
+```
+
+```{r}
+kable(tb.sum.va, caption = "Accuracy measuring of models on valid data") %>%
+  kable_styling(full_width = T)
+
+```
+
+From the comparing metric r2, RMSE, ME, MAE, MPE, MAPE, we can see that the metrics of evaluating between models are not different too much, which means the ability of predicting of these models are quite similar. However, MBA method suggests a little better model, because the ME and MAE of MBA method is lowest, and BMA suggests a model with just 6 variables, less variables than other models, parsimonious model.
+
+### VIF TEST FOR MULTICOLLINEARITY
+```{r}
+VIF.table <- tidy(vif(lm.BMA))
+kable(VIF.table, caption = "VIF test for model", col.names = c("Regressor", "VIF"))
+```
+
+Because all VIF of variables are all below 10, there is no multicollinearity.
+
+## INTERPRETING MODEL CHOSEN
+```{r}
+summary(lm.BMA)$coefficient
+```
+
+The Equation:
+CLV = -2713.54 + (69 x Monthly Payment) + (668 x EmploymentStatus Employed) + (-802 x More than 3 Complaints) + (11867 x Buy 2 Policies) + (3579 x Buy more than 2 Policies) + (-723 x Normal Vehicle)
+
+ * **Monthly.Premium.Auto: 68.6**, which means that when other variables remained constant, the monthly payment of customer increases $1, that would cause the increase of 69 dollar of Customer Lifetime Value.
+ * **EmploymentStatus_Employed: 667.9**, which means that when other variables remained constant, The customer with employed status will bring higher $668 revenue to company than disable customer.
+ * **Num.of.Complaints_More.than.3: -801.9**, which means that when other variables remained constant, the value of customers who have more than 3 complaints is lower about $802 than that of customers have less than 3 complaints.
+ * **New.Num.of.Policies_2: 11867.1**, which means that when other variables remained constant,the most valued customers are people who buy 2 policies, the revenue from these customer higher $11867 than customer who just buy 1 policy.
+ * **New.Num.of.Policies_More.than.2: 3578.6**, which means that when other variables remained constant, customer who buy more than 2 policies have revenue higher than that of customer buy 1 policy, about $3579.
+ * **New.Car.Class_Normal.Vehicle: -723.1**, which means that when other variables remained constant, compare to luxury vehicle class, revenue from customer who buy insurance for normal vehicles is less than about $723.
+
+```{r}
+prediction.coef <- data.frame(c("Intercept","Monthly Payment","EmploymentStatus_Employed","Number of Complaints: > 3","Number of Policy: 2","Number of Policy: >2", "Car Class: Normal Vehicle"),lm.BMA$coefficients)
+rownames(prediction.coef) <- NULL
+
+write.csv(prediction.coef[-1,],"prediction_coef.csv", row.names = F)
+```
+

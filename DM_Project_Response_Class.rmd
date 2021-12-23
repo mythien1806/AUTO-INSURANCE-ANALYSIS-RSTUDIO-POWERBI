@@ -1,0 +1,317 @@
+---
+title: "Response Model"
+author: "Nhat My Thien Nguyen"
+date: "11/27/2021"
+output: html_document
+---
+
+```{r setup, include=TRUE, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readr); library(tidyverse); library(dplyr); library(psych); library(PerformanceAnalytics); library(skimr); library(lessR); library(ggplot2); library(gridExtra); library(fastDummies); library(forecast); library(BMA); library(stats); library(olsrr); library(MASS); library(kableExtra); library(car); library(broom); library(caret); library(ROSE); library(FNN); library(gains)
+```
+
+```{r}
+insurance<-read.csv("CLV_Cleaned_data.csv")
+```
+
+```{r}
+colnames(insurance)
+```
+
+### Probability of YES response and NO response
+```{r}
+prop.table(table(insurance$New.Response))
+```
+We have the probability of Yes Response is just 14.3%, we need to oversampling the train dataset.
+
+
+## PATITION DATA: 60% of train data, 40% of valid data
+
+```{r}
+set.seed(123)
+## partitioning into training (60%), validation (40%)
+train.index <- sample(rownames(insurance), dim(insurance)[1]*0.6)  # randomly sample 60% of the row IDs for training
+valid.index <- setdiff(rownames(insurance), train.index)           # use setdiff() to find records not already in the training set
+
+# create the 3 data frames by collecting all columns from the appropriate rows
+train.df <- insurance[train.index, -c(1,2)]
+valid.df <- insurance[valid.index, -c(1,2)]
+
+dim(train.df)
+dim(valid.df)
+```
+
+```{r}
+prop.table(table(train.df$New.Response))
+prop.table(table(valid.df$New.Response))
+```
+
+### MODEL without OVERSAMPLING
+
+```{r}
+# Run model without oversampling
+logit.reg.NO.OVER<- glm(New.Response ~., data = train.df, family = "binomial")
+logit.reg.pred.NO.OVER <- predict(logit.reg.NO.OVER, valid.df,type="response")
+confusionMatrix(as.factor(ifelse(logit.reg.pred.NO.OVER>0.5, 1 ,0)),as.factor(valid.df$New.Response),positive = "1")
+```
+
+Even though accuracy is 87.19%, but the sensitivity here is 14.1%, which is pretty low. As a analyst working at insurance company, we want to improve this rate to better predict who will accept renew offer. 
+
+## OVERSAMPLING
+
+```{r}
+table(train.df$New.Response)            
+prop.table(table(train.df$New.Response))    #Checking proportion of Yes and No response in training dataset.
+```
+
+Because the proportion of Response Yes in training data is only 14.65%, I will do oversampling for better prediction of 1.
+
+```{r}
+train.df.over<-ovun.sample(New.Response~.,data=train.df,method="over",N=9354)$data
+table(train.df.over$New.Response)
+```
+
+### MODEL with OVERSAMPLING (ALL VARIABLES)
+
+```{r}
+logit.reg.over<- glm(New.Response ~., data = train.df.over, family = "binomial")  #Run logit model with oversampling
+summary(logit.reg.over)
+```
+
+```{r}
+logit.reg.over.pred <- predict(logit.reg.over, valid.df,type="response")
+confusionMatrix(as.factor(ifelse(logit.reg.over.pred>0.5, 1 ,0)),as.factor(valid.df$New.Response),positive = "1")
+```
+
+The accuracy now is down to 70.2%, but we have higher sensitivity 58.02%, which means this model is doing better of prediction 1 than without oversampling model.
+
+## MODEL SELECTION:
+
+### MODEL 1: LOGISTIC MODEL WITH SIGNIFICANT PREDICTORS
+
+From the model with all variables above, we chose 19 variables significant at 5% of level:
+
+ * Income
+ * Total.Claim.Amount                 
+ * EmploymentStatus_Medical.Leave     
+ * EmploymentStatus_Retired           
+ * EmploymentStatus_Unemployed      
+ * Location.Code_Suburban         
+ * Marital.Status_Married          
+ * Marital.Status_Single           
+ * Policy.Type_Personal.Auto          
+ * Sales.Channel_Branch               
+ * Sales.Channel_Call.Center        
+ * Sales.Channel_Web                
+ * Vehicle.Size_Medsize               
+ * Vehicle.Size_Small                
+ * Num.of.Complaints_More.than.3        
+ * New.Num.of.Policies_2             
+ * New.Num.of.Policies_More.than.2   
+ * New.Education_High.School.or.Below 
+ * New.Education_Higher.Master     
+
+```{r}
+# Choosing significant variables (5% of significant level)
+select.logit.var <- c("New.Response", "Income", "Total.Claim.Amount", "EmploymentStatus_Medical.Leave", "EmploymentStatus_Retired", "EmploymentStatus_Unemployed", "Location.Code_Suburban", "Marital.Status_Married", "Marital.Status_Single", "Policy.Type_Personal.Auto", "Sales.Channel_Branch", "Sales.Channel_Call.Center", "Sales.Channel_Web", "Vehicle.Size_Medsize", "Vehicle.Size_Small", "Num.of.Complaints_More.than.3", "New.Num.of.Policies_2", "New.Num.of.Policies_More.than.2", "New.Education_High.School.or.Below", "New.Education_Higher.Master" )
+logit.1 <- glm(New.Response ~., data = train.df.over[,select.logit.var], family = "binomial")
+summary(logit.1)
+```
+
+```{r}
+logit.pred.1 <- predict(logit.1, valid.df,type="response")
+model1<-confusionMatrix(as.factor(ifelse(logit.pred.1>0.5, 1 ,0)),as.factor(valid.df$New.Response),positive = "1")
+model1
+```
+
+This model has accuracy rate is 69.98%, sensitivity rate is 57.2 %. 
+
+### MODEL 2 : USING BMA with BIC criteria to select model
+
+```{r}
+bma.X <- train.df.over[, -6]
+bma.Y <- train.df.over[,6]
+
+bma.search <- bic.glm(bma.X, bma.Y, strict = F, OR =20, glm.family = "binomial")
+
+summary(bma.search)
+```
+
+19 Variables suggested by BMA method:
+
+ * Income                             
+ * Monthly.Premium.Auto             
+ * Total.Claim.Amount                 
+ * EmploymentStatus_Employed          
+ * EmploymentStatus_Retired           
+ * EmploymentStatus_Unemployed        
+ * Location.Code_Urban                
+ * Marital.Status_Married             
+ * Marital.Status_Single              
+ * Policy.Type_Personal.Auto           
+ * Sales.Channel_Branch               
+ * Sales.Channel_Call.Center         
+ * Sales.Channel_Web                  
+ * Vehicle.Size_Small
+ * Vehicle.Size_Medsize
+ * New.Num.of.Policies_More.than.2    
+ * New.Car.Class_Mid.Class.Vehicle    
+ * New.Education_High.School.or.Below
+ * New.Education_Higher.Master       
+
+
+```{r}
+# Predictors suggested by BMA
+bma.logit.var <- c("New.Response","Income", "Monthly.Premium.Auto", "Total.Claim.Amount", "EmploymentStatus_Employed", "EmploymentStatus_Retired", "EmploymentStatus_Unemployed", "Location.Code_Urban", "Marital.Status_Married", "Marital.Status_Single", "Policy.Type_Personal.Auto", "Sales.Channel_Branch", "Sales.Channel_Call.Center", "Sales.Channel_Web", "Vehicle.Size_Small", "Vehicle.Size_Medsize", "New.Num.of.Policies_More.than.2", "New.Car.Class_Mid.Class.Vehicle", "New.Education_High.School.or.Below", "New.Education_Higher.Master")
+
+bma.logit <- glm(New.Response ~., data = train.df.over[,bma.logit.var], family = "binomial")
+summary(bma.logit)
+```
+
+```{r}
+logit.pred.bma <- predict(bma.logit, valid.df,type="response")
+model2<-confusionMatrix(as.factor(ifelse(logit.pred.bma>0.5, 1 ,0)),as.factor(valid.df$New.Response),positive = "1")
+model2
+```
+
+
+The accuracy rate = 69.35%, Sensitivity rate : 52.87%. We can see that the sensitivity rate and accuracy rate of model suggested by BMA method are lower than that of first model.
+
+### Using STEPWISE for choosing Variables
+```{r}
+logit.step.both <- step(logit.reg.over, direction = "both")
+```
+
+```{r}
+summary(logit.step.both)
+```
+
+This Stepwise model chose 23 variables.
+
+```{r}
+logit.pred.step <- predict(logit.step.both, valid.df,type="response")
+model3<-confusionMatrix(as.factor(ifelse(logit.pred.step>0.5, 1 ,0)),as.factor(valid.df$New.Response),positive = "1")
+model3
+```
+
+The STEPWISE model has accuracy rate = 70.31%, sensitivity rate = 58.02% 
+
+### Comparision and Choose Best Model
+
+```{r}
+model<-c("Model1","Model2","Model3")
+num.variables<-c(19,19,23)
+accuracy<-c(model1$overall[1],model2$overall[1],model3$overall[1])
+sensitivity<-c(model1$byClass[1],model2$byClass[1],model3$byClass[1])
+
+table<-data.frame(model,num.variables,accuracy,sensitivity)
+
+kable(table, caption = "Accuracy measuring of predictive models") %>%
+  kable_styling(full_width = T)
+
+```
+
+
+Overall, the accuracy and sensitivity of stepwise model is performance the best among three models. Thus, we choose the STEPWISE model as the best preditive model for deploying.
+
+### Decile-Wise lift Chart
+
+```{r}
+gains <- gains(insurance[valid.index,]$New.Response, logit.pred.step)
+response <- insurance[valid.index, ]$New.Response
+
+
+plot(c(0,gains$cume.pct.of.total*sum(response))~c(0,gains$cume.obs), 
+     xlab="# cases", ylab="Cumulative Response", main="Lift Chart", type="l")
+lines(c(0,sum(response))~c(0,dim(insurance[valid.index,])[1]), col="gray", lty=2)
+
+barplot(gains$mean.resp/mean(response), names.arg = gains$depth,
+        xlab = "Percentile", ylab = "Mean Response", main = "Decile-wise lift chart")
+```
+
+
+## INTERPRETING THE CHOSEN MODEL:
+```{r}
+#summary(logit.step.both)$coefficient
+data.frame(Coefficient = coef(logit.step.both), Odds = exp(coef(logit.step.both)))
+
+```
+
+The Logistic Equation:
+
+Log ( Odds(Response = YES)) = 0.467 + (0.0000096 x Income) + (0.0035 x Monthly.Premium.Auto) + (-0.0012 x Months.Since.Policy.Inception) +(-0.0013 x Claim Amount) +(-0.31 x EmploymentStatus_Employed) + (0.38 x Medical.Leave Status) + (2.4 x Retired Status) + (-0.51 x Unemployed status) + (1.42 x suburban location) + (-0.6 x Married Status) + (-0.66 x Single Status) + (-0.18 x Personal Policy) +(0.24 x Special Policy) + (-0.64 x Brand Sale Chanel) + (-0.4 x Call Sale Chanel) + (-0.52 x Web Sale Chanel) + (-0.32 x Mid-size Vehicles) + (-0.73 x Small-size vehicle) + (-0.1 x Num.of.Policies_2) + (-0.3 x Num.of.Policies_More.than.2) + (-0.23 x New.Car.Class_Mid.Class.Vehicle) +(-0.23 x High school or below) + (0.38 x Higher Master)
+
+Interpreting the Coefficient:
+
+ * **Income: 0.0000096** : Remain others, if the income of customer increase by $1, the odds of yes response increase by 1 (exp(0.0000096)), not much significant.
+ * **Monthly.Premium.Auto: 0.0035** : Remain others, if the monthly payment of customer increase by $1, the odds of yes response increase by 1 (exp(0.0035)).
+ * **Months.Since.Policy.Inception: -0.0012** : Remain others, if the month policy inception of customer increase by 1 month, the odds of yes response decrease by 1 (exp(-0.0012)).
+ * **Total.Claim.Amount: -0.0013** : Remain others, If the total claim amount increase by $1, the the odds of yes response decrease by 1 (exp(-0.0013))
+ * **EmploymentStatus_Employed: -0.31** : Remain others, If customers have  employment status is employed, they have the odds of YES response 0.73(exp(0.31)) lower than that of disable customer.
+ * **EmploymentStatus_Medical.Leave: 0.38** : Remain others, If customers have  employment status is medical leave, they have the odds of YES response 1.5(exp(0.38)) higher than that of disable customer.
+ * **EmploymentStatus_Retired: 2.4** : Remain others, If customers have  employment status is retired, they have the odds of YES response 11(exp(2.4)) higher than that of disable customer. 
+ * **EmploymentStatus_Unemployed: -0.51** : Remain others, If customers have  employment status is unemployment, they have the odds of YES response 0.6(exp(-0.51)) lower than that of disable customer.
+ * **Location.Code_Suburban: 1.42** : Remain others, If customers living in suburban areas, they have odds of YES response 4.14(exp(1.42)) higher than that of customers living in rural areas.
+ * **Marital.Status_Married: -0.6** : Remain others, If customers have married status, they have the odds of YES response 0.55(exp(-0.6)) lower than that of customers having divorced status.
+ * **Marital.Status_Single: -0.66** : Remain others, If customers have single status, they have the odds of YES response 0.51(exp(-0.66)) lower than that of customers having divorced status.
+ * **Policy.Type_Personal.Auto:  -0.18** : Remain others, If customers have personal contract previously, they have the odds of YES response 0.83(exp(-0.18)) lower than that of customers having comporate contract.
+ * **Policy.Type_Special.Auto:  0.24** : Remain others, If customers have special contract previously, they have the odds of YES response 1.27(exp(0.24)) higher than that of customers having comporate contract.
+ * **Sales.Channel_Branch: -0.64** : Remain others, If customers buy insurance through brand sale channel, they have the odds of YES response 0.58(exp(-0.64)) lower than that of customer buying through agent.
+ * **Sales.Channel_Call.Center: -0.4** : Remain others, If customers buy insurance through call center sale channel, they have the odds of YES response 0.67(exp(-0.4)) lower than that of customer buying through agent.
+ * **Sales.Channel_Web: -0.52** : Remain others, If customers buy insurance through web sale channel, they have the odds of YES response 0.6(exp(-0.52)) lower than that of customer buying through agent.
+ * **Vehicle.Size_Medsize: -0.32** : Remain others, If customers' car size are medium, they have the odds of YES response 0.73(exp(-0.32)) lower than that of customers own large cars.
+ * **Vehicle.Size_Small: -0.73** : Remain others, If customers' car size are small, they have the odds of YES response 0.5(exp(-0.73)) lower than that of customers own large cars.
+ * **New.Num.of.Policies_2: -0.11** : Remain others, If customers buy 2 policies in last their insurance, their odds of renewing contracts are 0.9(exp(-0.11)) lower than that of customer buying 1 policies in last insurance.
+ * **New.Num.of.Policies_More.than.2: -0.34** : Remain others,  If customers buy more than 2 policies in last their insurance, their odds of renewing contracts are 0.74(exp(-0.34)) lower than that of customer buying 1 policies in last insurance.
+ * **New.Car.Class_Mid.Class.Vehicle: 0.25** : Remain others,  If customers have mid-class vehicles, their odds of renewing contracts are 1.3(exp(0.25)) higher than that of customers have luxury vehicles
+ * **New.Education_High.School.or.Below: -0.23** : Remain others, If customers' education are high school or below, their odds of renewing contracts are 0.79(exp(-0.23)) lower than that of customer have college education or above.
+ * **New.Education_Higher.Master: 0.38** : Remain others, If customers' education are master or above, their odds of renewing contracts are 1.46(exp(0.21)) lower than that of customer have college degree or bachelor degree.
+
+## COMPARING WITH K-NN
+
+```{r}
+accuracy.knn.df<-data.frame(k=seq(1,14,1),accuracy.knn=rep(0,14),sensitivity.knn=rep(0,14))
+for (i in 1:14) {
+  knn.pred <- knn(train.df[,-6], valid.df[,-6], cl = train.df[,6], k = i) 
+  accuracy.knn.df[i,2]<-confusionMatrix(as.factor(knn.pred), as.factor(valid.df$New.Response),positive = "1")$overall[1]
+  accuracy.knn.df[i,3]<-confusionMatrix(as.factor(knn.pred), as.factor(valid.df$New.Response),positive = "1")$byClass[1]
+}
+
+accuracy.knn.df
+```
+
+We chose k=3 which is an odd number to ensure there is no tie and it balances between overfitting and ignoring the predictor information.
+
+Using knn to classification, we have the accuracy rate = 92.61%, sensitivity rate = 95.84%. KNN performs super great in this case of classification.
+
+
+
+```{r}
+# class.coef <- data.frame(Coefficient = logit.step.both$coefficients, Odds = exp(coef(logit.step.both)))
+# class.coef$Variables <- rownames(class.coef)
+# row.names(class.coef) <- NULL
+
+
+# write.csv(class.coef[-1,c(3,1,2)],"Class_Coef.csv", row.names = F)
+```
+
+```{r}
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
