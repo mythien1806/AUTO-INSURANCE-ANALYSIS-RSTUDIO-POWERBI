@@ -1,0 +1,626 @@
+---
+title: "DM_Project"
+author: "Thien Nguyen & Nam Tran"
+date: "11/20/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readr); library(tidyverse); library(dplyr); library(psych); library(PerformanceAnalytics); library(skimr); library(dplyr); library(lessR); library(ggplot2); library(gridExtra)
+```
+
+```{r}
+Insurance_df <- read.csv("Marketing_Customer_Lifetime_Value_Data.csv")
+```
+
+```{r}
+dim(Insurance_df)
+head(Insurance_df)
+```
+
+This dataset has 9134 observations and 24 variables.
+
+```{r}
+colnames(Insurance_df)
+```
+
+```{r}
+str(Insurance_df)
+```
+ 
+#### Data type:
+ 
+ * Customer :         Character / Nominal Variable
+ * State:             Character / Nominal Variable
+ * Customer.Lifetime.Value      : numeric / Numerical Variable
+ * Response                     : Character /  Binary Variable
+ * Coverage                     : Character /  Nominal Variable
+ * Education                    : Character /  Nominal Variable
+ * Effective.To.Date            : Character /  Nominal Variable
+ * EmploymentStatus             : Character /  Nominal Variable
+ * Gender                       : Character /  Binary Variable
+ * Income                       : Integer /   Numerical Variable
+ * Location.Code                : Character /  Nominal Variable
+ * Marital.Status               : Character /  Nominal Variable
+ * Monthly.Premium.Auto         : Integer /   Numerical Variable
+ * Months.Since.Last.Claim      : Integer /   Numerical Variable
+ * Months.Since.Policy.Inception: Integer /   Numerical Variable
+ * Number.of.Open.Complaints    : Integer /   Numerical Variable
+ * Number.of.Policies           : Integer /   Numerical Variable
+ * Policy.Type                  : Character /   Nominal Variable
+ * Policy                       : Character /   Nominal Variable
+ * Renew.Offer.Type             : Character /   Nominal Variable
+ * Sales.Channel                : Character /   Nominal Variable
+ * Total.Claim.Amount           : numeric / Numerical Variable
+ * Vehicle.Class                : Character /   Nominal Variable
+ * Vehicle.Size                 : Character /   Nominal Variable
+ 
+ We do NOT need to examine **"Customer" variable** (Customer ID) and **"Effective.To.Date" variable** (Daytime), because they are irrelevant with our models.
+ We can also remove **Policy** because the Policy.Type variable has similar values with Policy variable
+
+```{r}
+num.val.name <- c("Customer.Lifetime.Value", "Income", "Monthly.Premium.Auto", "Months.Since.Last.Claim", "Months.Since.Policy.Inception", "Number.of.Open.Complaints",
+                  "Number.of.Policies", "Total.Claim.Amount")
+cat.val.name <- c("State", "Response", "Coverage", "Education", "EmploymentStatus", "Gender", "Location.Code", "Marital.Status", "Policy.Type", "Policy", 
+                  "Renew.Offer.Type", "Sales.Channel", "Vehicle.Class", "Vehicle.Size")
+```
+
+### DATA EXPLORATION
+
+We will explore the information to understanding deeply data.
+
+### DEALING WITH MISSING VALUES
+
+```{r}
+# apply(is.na(Insurance_df),2,which): Another way to find the location of missing values
+summary(Insurance_df[,cat.val.name])
+# Fortunately, There is NO MISSING VALUE in Categorical Variables.
+summary(Insurance_df[,num.val.name])
+# Numerical Variables do not have missing values as well.
+
+```
+
+### SUMMARY STATISTICS AND DEALING WITH OUTLIERS.
+
+### NUMERICAL VARIABLES
+
+```{r}
+num.sum.stat <- skimr::skim(Insurance_df[,num.val.name])
+num.sum.stat
+```
+
+Let examine into each variable:
+
+### Customer Lifetime Value:
+```{r}
+par(mfrow = c(1,2))
+boxplot(Insurance_df$Customer.Lifetime.Value, xlab = "Customer Lifetime Value", log = 'y')
+hist(Insurance_df$Customer.Lifetime.Value, xlab = "Customer Lifetime Value", main = "Distribution of CLV")
+nrow(Insurance_df[Insurance_df$Customer.Lifetime.Value > 20000,])/length(Insurance_df$Customer.Lifetime.Value)*100
+
+
+# Customer Lifetime Value is the outcome variable:
+# Max: $83325/ Min: $1898/ Mean: $8005/ sd: $6871
+# From the boxplot and histogram, the distribution of Customer.Lifetime.Value is right skewed.
+# Most of customer lifetime value is less than 20000
+# But we have 6% (575) records that have value far greater than the mean, We need to consider these values carefully later because they are the most value customers.
+```
+
+### Income
+```{r}
+par(mfrow = c(1,2))
+boxplot(Insurance_df$Income, xlab = "Income")
+hist(Insurance_df$Income, xlab = "Income", main = "Distribution of Income")
+
+# Max: $99981/ Min: $0/ Mean: $37657/ sd: $30380
+# From histogram, except 0 values of income, the income varies from $10000 to $100000.
+
+```
+  
+```{r}
+plot(Insurance_df$Customer.Lifetime.Value ~ Insurance_df$Income, xlab = "Income", ylab = "Customer Lifetime Value")
+```
+ 
+The plot shows there is barely relationship between Income and Customer Value.
+
+```{r}
+boxplot(Insurance_df$Income ~ Insurance_df$Response, xlab = "Response", ylab = "Income")
+```
+
+Customers who deny renewal offer have wider range of income than customer accept the offer. 
+  
+### Monthly.Premium.Auto 
+```{r}
+par(mfrow = c(1,2))
+boxplot(Insurance_df$Monthly.Premium.Auto , xlab = "Amount Customer pay Monthly for Premium")
+hist(Insurance_df$Monthly.Premium.Auto , xlab = "Amount Customer pay Monthly for Premium", main = "Distribution of Monthly Payment")
+nrow(Insurance_df[Insurance_df$Monthly.Premium.Auto > 150,])/length(Insurance_df$Monthly.Premium.Auto)*100
+
+# Max: $298/ Min: $68/ Mean: $93.22/ sd: $34.4
+# From histogram, the amount premium customer pay monthly varies from $60 to $300
+# From the boxplot and histogram, the distribution of Amount customer pay monthly is right skewed.
+# Most of Premium customer pay less than 150 per month
+# But we have 5% (510) records that have value far greater than the mean, We need to consider these values carefully later because they are the most value customers.
+```
+
+```{r}
+plot(Insurance_df$Customer.Lifetime.Value ~ Insurance_df$Monthly.Premium.Auto, xlab = "Monthly Payments", ylab = "Customer Lifetime Value")
+```
+
+There is positive correlation between Customer Lifetime Value and Monthly Premium Auto (MPA) as MPA increase, customer value also increase. 
+
+```{r}
+boxplot(Insurance_df$Monthly.Premium.Auto ~ Insurance_df$Response, xlab = "Response", ylab = "Monthly Payments")
+```
+
+Customers who accept and deny renew offer do not have much different in monthly payments. Customers who response No has max payments higher than customer who response Yes, but Yes customer has median higher than No customer.
+
+### Months.Since.Last.Claim 
+```{r}
+par(mfrow = c(1,2))
+boxplot(Insurance_df$Months.Since.Last.Claim  , xlab = "Months.Since.Last.Claim ")
+hist(Insurance_df$Months.Since.Last.Claim  , xlab = "Months.Since.Last.Claim ", main = "Distribution of Months.Since.Last.Claim")
+
+
+# Max: 35 months/ Min: 0 month/ Mean: 15.1 months/ sd: 10.1 months
+# From histogram, the number of months since the last claim varies from 0 to 35.
+# From the boxplot and histogram, the distribution of Months.Since.Last.Claim  is right skewed.
+```
+
+```{r}
+plot(Insurance_df$Customer.Lifetime.Value ~ Insurance_df$Months.Since.Last.Claim, xlab = "Monthly Since Last Claim", ylab = "Customer Lifetime Value")
+```
+
+It seems there is no clearly relationship between Customer Lifetime Value and Months Since Last Claim.
+
+```{r}
+boxplot(Insurance_df$Months.Since.Last.Claim ~ Insurance_df$Response, xlab = "Response", ylab = "Months Since Last Claim")
+```
+
+There is not much different in Months Since Last Claim between Customers response Yes and No. 
+
+### Months.Since.Policy.Inception  
+```{r}
+par(mfrow = c(1,2))
+boxplot(Insurance_df$Months.Since.Policy.Inception   , xlab = "Months.Since.Policy.Inception  ")
+hist(Insurance_df$Months.Since.Policy.Inception   , xlab = "Months.Since.Policy.Inception ", main = "Distribution of Months.Since.Policy.Inception")
+
+
+# Max: 99 months/ Min: 24 month/ Mean: 48.6 months/ sd: 27.9 months
+# From histogram, the number of months The insurance was first purchased varies from 24 to 99.
+# From the boxplot and histogram, the distribution of Months Since Policy Inception  is quite a uniform distribution.
+```
+
+```{r}
+plot(Insurance_df$Customer.Lifetime.Value ~ Insurance_df$Months.Since.Policy.Inception, xlab = "Months Since Policy Inception", ylab = "Customer Lifetime Value")
+```
+
+There is also no clear relationship between Customer Lifetime Value and Months Since Policy Inception. 
+
+```{r}
+boxplot(Insurance_df$Months.Since.Policy.Inception ~ Insurance_df$Response, xlab = "Response", ylab = "Months Since Policy Inception")
+```
+
+Customers who response Yes has higher medium of Months Since Policy Inception than customers who response No.
+
+### Number.of.Open.Complaints  
+```{r}
+hist(Insurance_df$Number.of.Open.Complaints   , xlab = "Number.ofComplaints  ")
+
+# Treat Number of Complaints as Nominal Variable:
+# Examine how Number of Complaints interact with outcome variable:
+data.for.plot_num.of.Complain <- aggregate(Insurance_df$Customer.Lifetime.Value, by = list(as.factor(Insurance_df$Number.of.Open.Complaints)), FUN = mean)
+names(data.for.plot_num.of.Complain) <- c("Number.of.Open.Complaints", "Mean_CLV")
+
+par(mfrow = c(1,2))
+barplot(height = data.for.plot_num.of.Complain$Mean_CLV, names.arg = data.for.plot_num.of.Complain$Number.of.Open.Complaints,
+        xlab = "Number of Complaints", ylab = "Avg.CLV", main = "AvgCLV vs Number of Complaints")
+boxplot(Insurance_df$Customer.Lifetime.Value ~ Insurance_df$Number.of.Open.Complaints, log = 'y', main = "Boxplot CLV vs Number complaints")
+
+# As we see on bar chart and boxplot of CLV and Number of complaints, the range and the average customer lifetime values of customers make less than 2 complaints are quite similar, and these values of customer who make more than 3 complaints are quite similar.
+# We could group values of numbers complaints into 2 groups, the first group includes values 0,1,2 and the second group includes 3,4,5
+
+
+Insurance_df$Num.of.Complaints = ifelse(Insurance_df$Number.of.Open.Complaints >=3,"More than 3","Less than 3") #Create a new variable replace for Number.of.Open.Complaints   
+
+```
+
+
+### Number.of.Policies
+```{r}
+par(mfrow = c(1,2))
+boxplot(Insurance_df$Number.of.Policies   , xlab = "Number.of.Policies that customer buy  ")
+hist(Insurance_df$Number.of.Policies   , xlab = "Number.of.Policies that customer buy  ")
+
+# Treat Number of Policies as Nominal Variable:
+# Examine how Number of Policies interact with outcome variable:
+data.for.plot_num.of.Policies <- aggregate(Insurance_df$Customer.Lifetime.Value, by = list(as.factor(Insurance_df$Number.of.Policies)), FUN = mean)
+names(data.for.plot_num.of.Policies) <- c("Number.of.Policies", "Mean_CLV")
+
+par(mfrow = c(1,2))
+barplot(height = data.for.plot_num.of.Policies$Mean_CLV, names.arg = data.for.plot_num.of.Policies$Number.of.Policies,
+        xlab = "Number of Policies", ylab = "Avg.CLV", main = "AvgCLV vs Number of Policies")
+boxplot(Insurance_df$Customer.Lifetime.Value ~ Insurance_df$Number.of.Policies, log = 'y', main = "Boxplot CLV vs Number Policies")
+
+# As we see on bar chart and boxplot of CLV and Number of policies that customer buy, the range and the average customer lifetime values of customers buy more than 3 policies are quite similar.
+# We could group values of numbers complaints into 3 groups, the first group includes customers who buy 1 policy, the second group includes people who buy 2 policies, and the final group includes people who buy more than 3 policies
+
+Insurance_df$New.Num.of.Policies = ifelse(Insurance_df$Number.of.Policies ==1,1,ifelse(Insurance_df$Number.of.Policies ==2,2,"More than 2")) #Create a new variable replace for Number.of.Policies
+
+```
+
+### Total.Claim.Amount
+```{r}
+par(mfrow = c(1,2))
+boxplot(Insurance_df$Total.Claim.Amount, xlab = "Total.Claim.Amount")
+hist(Insurance_df$Total.Claim.Amount, xlab = "Total.Claim.Amount")
+nrow(Insurance_df[Insurance_df$Total.Claim.Amount > 1000,])/length(Insurance_df$Total.Claim.Amount)*100
+
+# Max: $2893/ Min: $0/ Mean: $434/ sd: $291
+# From histogram, the Total.Claim.Amount varies from $0 to $3000.
+# Most of amount claim value is less than 1000
+# But we have 4.4% (403) records that have value far greater than the mean.
+```
+
+```{r}
+plot(Insurance_df$Customer.Lifetime.Value ~ Insurance_df$Total.Claim.Amount, xlab = "Total Claim Amount", ylab = "Customer Lifetime Value")
+```
+
+There is slight positive correlation between Customer Lifetime Value and Total Claim Amount as it shows when claim amount increase, customer value tend to increase.
+
+```{r}
+boxplot(Insurance_df$Total.Claim.Amount ~ Insurance_df$Response, xlab = "Response", ylab = "Total Claim Amount")
+```
+
+Customers who response Yes have wider range of total claim amount than Yes customers, but Yes customers have little higher medium than No customers.
+
+### Correllation Matrix and Plot.
+```{r}
+New.Num.Val <- c("Customer.Lifetime.Value", "Income", "Monthly.Premium.Auto", "Months.Since.Last.Claim", "Months.Since.Policy.Inception", "Total.Claim.Amount")
+round(cor(Insurance_df[,New.Num.Val]),3)
+pairs(Insurance_df[,New.Num.Val])
+```
+
+### CATEGORICAL VARIABLES
+
+```{r}
+New.Cat.val <- c("State", "Response", "Coverage", "Education", "EmploymentStatus", "Gender", "Location.Code", "Marital.Status", "Policy.Type", 
+                  "Renew.Offer.Type", "Sales.Channel", "Vehicle.Class", "Vehicle.Size","Num.of.Complaints", "New.Num.of.Policies")
+```
+
+### Response:
+```{r}
+# Response variable is the outcome variable for classification model:
+table(Insurance_df$Response)
+# Values of response are unbalance, we need do do oversampling when we come to classification model.
+
+# To make easy for computing, we transform values to 0(No) and 1(Yes)
+Insurance_df$New.Response = ifelse(Insurance_df$Response == "Yes",1,0)
+
+```
+
+### State
+```{r}
+table(Insurance_df$State)
+# The Mode is California, most of customer live in California.
+
+boxplot(Insurance_df$Customer.Lifetime.Value ~ Insurance_df$State, xlab = "State", ylab = "Customer Lifetime Value", log = 'y' )
+pivot(data = Insurance_df, compute = mean, variable = Customer.Lifetime.Value, by = State )
+```
+We can see on the boxplot of range of CLV vs State, and pivot table of mean_CLV vs state, there is NO huge significant difference between these state. Thus, we could **REMOVE STATE VARIABLE** out of model.
+
+### Coverage
+```{r}
+# Coverage with CLV:
+pivot(data = Insurance_df, compute = c(mean,sum), variable = Customer.Lifetime.Value, by = Coverage )
+boxplot(Insurance_df$Customer.Lifetime.Value ~ Insurance_df$Coverage, xlab = "Coverage", ylab = "Customer Lifetime Value", log = 'y' )
+
+
+# Coverage with Response:
+Insurance_df %>%
+  count(Response, Coverage) #Pivot table for Response and Coverage
+
+Coverage.Plot1 <- ggplot(Insurance_df, aes(x = Coverage, fill = Response)) + 
+  geom_bar(position = "dodge") + labs(y="Count of Response",title="Reponses by Coverage")
+
+Coverage.Plot2 <-ggplot(Insurance_df, aes(x = Coverage, y = length(Response), fill = Response)) +
+  geom_col(position = "fill")  #Proportion between YES and NO
+grid.arrange(Coverage.Plot1, Coverage.Plot2, ncol=2)
+```
+
+ * We can see that Premium Coverage has higher CLV than Extended and Basic.
+ * The proportion of Yes and No response between Coverage are quite similar.
+
+### Education
+```{r}
+# Education with CLV:
+pivot(data = Insurance_df, compute = c(mean,sum), variable = Customer.Lifetime.Value, by = Education )
+boxplot(Insurance_df$Customer.Lifetime.Value ~ Insurance_df$Education, xlab = "Education", ylab = "Customer Lifetime Value", log = 'y' )
+
+
+# Education with Response:
+Insurance_df %>%
+  count(Response, Education) #Pivot table for Response and Education
+
+Education.Plot1 <- ggplot(Insurance_df, aes(x = Education, fill = Response)) + 
+  geom_bar(position = "dodge") + labs(y="Count of Response",title="Reponses by Education")
+
+Education.Plot2 <-ggplot(Insurance_df, aes(x = Education, y = length(Response), fill = Response)) +
+  geom_col(position = "fill")  #Proportion between YES and NO
+grid.arrange(Education.Plot1, Education.Plot2, ncol=2) 
+
+# Bacause the effects of Master and Doctor on CLV are quite similar, we could group 2 types of car into a group called "Higher Master".
+# Similarly, we could group University and College into group called "Associate degree", and remain High School or Below
+Insurance_df$New.Education = ifelse(Insurance_df$Education %in% c("Doctor","Master"),"Higher Master",
+                                    ifelse(Insurance_df$Education %in% c("Bachelor","College"),"Associate degree","High School or Below"))
+
+```
+
+ * We can see from the boxplot and pivot table of CLV and Education, Customer Lifetime Values from different level of education are not much different.
+ * The YES/NO ratio of High education people is higher than that of people who do not have degree.
+ 
+### EmploymentStatus
+```{r}
+# EmploymentStatus with CLV:
+pivot(data = Insurance_df, compute = c(mean,sum), variable = Customer.Lifetime.Value, by = EmploymentStatus )
+boxplot(Insurance_df$Customer.Lifetime.Value ~ Insurance_df$EmploymentStatus, xlab = "EmploymentStatus", ylab = "Customer Lifetime Value", log = 'y' )
+
+
+# EmploymentStatus with Response:
+Insurance_df %>%
+  count(Response, EmploymentStatus) #Pivot table for Response and EmploymentStatus
+
+EmploymentStatus.Plot1 <- ggplot(Insurance_df, aes(x = EmploymentStatus, fill = Response)) + 
+  geom_bar(position = "dodge") + labs(y="Count of Response",title="Reponses by EmploymentStatus")
+
+EmploymentStatus.Plot2 <-ggplot(Insurance_df, aes(x = EmploymentStatus, y = length(Response), fill = Response)) +
+  geom_col(position = "fill")  #Proportion between YES and NO
+grid.arrange(EmploymentStatus.Plot1, EmploymentStatus.Plot2, ncol=2)
+
+```
+
+ * We can see from the boxplot and pivot table of CLV and EmploymentStatus, Employed people have much CLV than others..
+ * The YES/NO ratio of Retired people is higher than that of others. 
+
+### Gender
+```{r}
+# Gender with CLV:
+pivot(data = Insurance_df, compute = c(mean,sum), variable = Customer.Lifetime.Value, by = Gender )
+boxplot(Insurance_df$Customer.Lifetime.Value ~ Insurance_df$Gender, xlab = "Gender", ylab = "Customer Lifetime Value", log = 'y' )
+
+
+# Gender with Response:
+Insurance_df %>%
+  count(Response, Gender) #Pivot table for Response and Gender
+
+Gender.Plot1 <- ggplot(Insurance_df, aes(x = Gender, fill = Response)) + 
+  geom_bar(position = "dodge") + labs(y="Count of Response",title="Reponses by Gender")
+
+Gender.Plot2 <-ggplot(Insurance_df, aes(x = Gender, y = length(Response), fill = Response)) +
+  geom_col(position = "fill")  #Proportion between YES and NO
+grid.arrange(Gender.Plot1, Gender.Plot2, ncol=2)
+
+```
+
+ * We can see from the boxplot and pivot table of CLV and Gender, the CLV of male and female customer are same.
+ * The YES/NO ratio of Male and Female customer are not much different. 
+ 
+### Location.Code
+```{r}
+# Location.Code with CLV:
+pivot(data = Insurance_df, compute = c(mean,sum), variable = Customer.Lifetime.Value, by = Location.Code )
+boxplot(Insurance_df$Customer.Lifetime.Value ~ Insurance_df$Location.Code, xlab = "Location.Code", ylab = "Customer Lifetime Value", log = 'y' )
+
+
+# Location.Code with Response:
+Insurance_df %>%
+  count(Response, Location.Code) #Pivot table for Response and Location.Code
+
+Location.Code.Plot1 <- ggplot(Insurance_df, aes(x = Location.Code, fill = Response)) + 
+  geom_bar(position = "dodge") + labs(y="Count of Response",title="Reponses by Location.Code")
+
+Location.Code.Plot2 <-ggplot(Insurance_df, aes(x = Location.Code, y = length(Response), fill = Response)) +
+  geom_col(position = "fill")  #Proportion between YES and NO
+grid.arrange(Location.Code.Plot1, Location.Code.Plot2, ncol=2)
+
+```
+
+ * We can see from the boxplot and pivot table of CLV and Location.Code, the CLV of rural, urban, and suburban customer are same.
+ * The YES response ratio of Suburban customer is higher than that of Rural and Urban Customer. 
+ 
+### Marital.Status
+```{r}
+# Marital.Status with CLV:
+pivot(data = Insurance_df, compute = c(mean,sum), variable = Customer.Lifetime.Value, by = Marital.Status )
+boxplot(Insurance_df$Customer.Lifetime.Value ~ Insurance_df$Marital.Status, xlab = "Marital.Status", ylab = "Customer Lifetime Value", log = 'y' )
+
+
+# Marital.Status with Response:
+Insurance_df %>%
+  count(Response, Marital.Status) #Pivot table for Response and Marital.Status
+
+Marital.Status.Plot1 <- ggplot(Insurance_df, aes(x = Marital.Status, fill = Response)) + 
+  geom_bar(position = "dodge") + labs(y="Count of Response",title="Reponses by Marital.Status")
+
+Marital.Status.Plot2 <-ggplot(Insurance_df, aes(x = Marital.Status, y = length(Response), fill = Response)) +
+  geom_col(position = "fill")  #Proportion between YES and NO
+grid.arrange(Marital.Status.Plot1, Marital.Status.Plot2, ncol=2)
+
+```
+
+ * We can see from the boxplot and pivot table of CLV and Marital.Status, the CLV of Divorced, Married, and Single customer are same.
+ * The YES response ratio of Divorced customer is higher than that of Married and Single Customer. 
+ 
+### Num.of.Complaints
+```{r}
+# Num.of.Complaints with CLV:
+pivot(data = Insurance_df, compute = c(mean,sum), variable = Customer.Lifetime.Value, by = Num.of.Complaints )
+boxplot(Insurance_df$Customer.Lifetime.Value ~ Insurance_df$Num.of.Complaints, xlab = "Num.of.Complaints", ylab = "Customer Lifetime Value", log = 'y' )
+
+
+# Num.of.Complaints with Response:
+Insurance_df %>%
+  count(Response, Num.of.Complaints) #Pivot table for Response and Num.of.Complaints
+
+Num.of.Complaints.Plot1 <- ggplot(Insurance_df, aes(x = Num.of.Complaints, fill = Response)) + 
+  geom_bar(position = "dodge") + labs(y="Count of Response",title="Reponses by Num.of.Complaints")
+
+Num.of.Complaints.Plot2 <-ggplot(Insurance_df, aes(x = Num.of.Complaints, y = length(Response), fill = Response)) +
+  geom_col(position = "fill")  #Proportion between YES and NO
+grid.arrange(Num.of.Complaints.Plot1, Num.of.Complaints.Plot2, ncol=2)
+
+``` 
+
+ * We can see from the boxplot and pivot table of CLV and Num.of.Complaints, Customers who make less than 3 complaints make much more CLV than customers make more than 3 complaints.
+ * But the ratio of saying YES of customers make more than 3 complaints is higher. 
+ 
+### New.Num.of.Policies
+```{r}
+# New.Num.of.Policies with CLV:
+pivot(data = Insurance_df, compute = c(mean,sum), variable = Customer.Lifetime.Value, by = New.Num.of.Policies )
+boxplot(Insurance_df$Customer.Lifetime.Value ~ Insurance_df$New.Num.of.Policies, xlab = "New.Num.of.Policies", ylab = "Customer Lifetime Value", log = 'y' )
+
+
+# New.Num.of.Policies with Response:
+Insurance_df %>%
+  count(Response, New.Num.of.Policies) #Pivot table for Response and New.Num.of.Policies
+
+Num.of.Policy.Plot1 <- ggplot(Insurance_df, aes(x = New.Num.of.Policies, fill = Response)) + 
+  geom_bar(position = "dodge") + labs(y="Count of Response",title="Reponses by New.Num.of.Policies")
+
+Num.of.Policy.Plot2 <-ggplot(Insurance_df, aes(x = New.Num.of.Policies, y = length(Response), fill = Response)) +
+  geom_col(position = "fill")  #Proportion between YES and NO
+grid.arrange(Num.of.Policy.Plot1, Num.of.Policy.Plot2, ncol=2)
+
+``` 
+
+ * We can see from the boxplot and pivot table of CLV and New.Num.of.Policies, Customers who buy 2 policies make much more CLV than other customers. Customers who buy only 1 policy has lowest CLV
+ * But the ratio of saying YES of customers buying 1 policy is higher than others. 
+
+### Policy.Type
+```{r}
+# Policy Type with CLV:
+pivot(data = Insurance_df, compute = c(mean,sum), variable = Customer.Lifetime.Value, by = Policy.Type )
+boxplot(Insurance_df$Customer.Lifetime.Value ~ Insurance_df$Policy.Type, xlab = "Policy Type", ylab = "Customer Lifetime Value", log = 'y' )
+
+
+# Policy Type with Response:
+Insurance_df %>%
+  count(Response,Policy.Type) #Pivot table for Response and Coverage
+
+Policy.Plot1 <- ggplot(Insurance_df, aes(x = Policy.Type, fill = Response)) + 
+  geom_bar(position = "dodge")+labs(y="Count of Response",title="Reponses by different Policy Type")
+
+Policy.Plot2 <-ggplot(Insurance_df, aes(x = Policy.Type, y = length(Response), fill = Response)) +
+  geom_col(position = "fill") +labs (y="Proportion of Reponse") #Proportion between YES and NO
+grid.arrange(Policy.Plot1, Policy.Plot2, ncol=2)
+```
+
+The plot shows Customers who have Special Policy have highest range of livetime value, but overall there is not much difference between different types of policy to customer lifetime value.
+
+The barchart shows most of customers are taking Personal Auto. Response "No" also accounts for majority, the proportion of Yes in Special Auto is a little higher than other two type.
+
+### Renew.Offer.Type
+```{r}
+# Renew Offer Type with CLV:
+pivot(data = Insurance_df, compute = c(mean,sum), variable = Customer.Lifetime.Value, by = Renew.Offer.Type )
+boxplot(Insurance_df$Customer.Lifetime.Value ~ Insurance_df$Renew.Offer.Type, xlab = "Renew Offer", ylab = "Customer Lifetime Value", log = 'y' )
+
+
+# Renew Offer Type with Response:
+Insurance_df %>%
+  count(Response,Renew.Offer.Type) #Pivot table for Response and Coverage
+
+Renew.Plot1 <- ggplot(Insurance_df, aes(x = Renew.Offer.Type, fill = Response)) + 
+  geom_bar(position = "dodge")+labs(y="Count of Response",title="Reponses by different Renew Offer")
+
+Renew.Plot2 <-ggplot(Insurance_df, aes(x = Renew.Offer.Type, y = length(Response), fill = Response)) +
+  geom_col(position = "fill") +labs (y="Proportion of Reponse") #Proportion between YES and NO
+grid.arrange(Renew.Plot1, Renew.Plot2, ncol=2)
+```
+The boxplot shows customers who receive Offer 1 have highest lifetime value, and those who receive Offer 4 have lowest value. 
+The charts show that most of customer reponsed Yes received offer 1 and 2, and there is little accept offer 3 and no customer accept offer 4.
+Propotion of response yes is highest for offer 2 and equal 0 for offer 4.
+
+### Vehicle.Class
+```{r}
+# Vehicle Class with CLV:
+pivot(data = Insurance_df, compute = c(mean,sum), variable = Customer.Lifetime.Value, by = Vehicle.Class)
+boxplot(Insurance_df$Customer.Lifetime.Value ~ Insurance_df$Vehicle.Class, xlab = "Vehicle Class", ylab = "Customer Lifetime Value", log = 'y' )
+
+
+# Vehicle Class with Response:
+Insurance_df %>%
+  count(Response,Vehicle.Class) #Pivot table for Response and Vehicle Class
+
+VehicleClass.Plot1 <- ggplot(Insurance_df, aes(x = Vehicle.Class, fill = Response)) + 
+  geom_bar(position = "dodge")+labs(y="Count of Response",title="Reponses by different Vehicle Class")
+
+VehicleClass.Plot2 <-ggplot(Insurance_df, aes(x = Vehicle.Class, y = length(Response), fill = Response)) +
+  geom_col(position = "fill") +labs (y="Proportion of Reponse") #Proportion between YES and NO
+grid.arrange(VehicleClass.Plot1, VehicleClass.Plot2, ncol=2)
+
+# Bacause the effects of Luxury car and Luxury SUV on CLV are quite similar, we could group 2 types of car into a group called "Luxury Vehicle".
+# Similarly, we could group Sport Car and SUV into group called "Mid.Class Vehicle", Four-Door Car and Two-Door Car we could group into "Normal Vehicle"
+Insurance_df$New.Car.Class = ifelse(Insurance_df$Vehicle.Class %in% c("Luxury Car","Luxury SUV"),"Luxury Vehicle",
+                                    ifelse(Insurance_df$Vehicle.Class %in% c("Sports Car","SUV"),"Mid.Class Vehicle","Normal Vehicle"))
+```
+
+The plot shows customers with four-door car and two-door car have lowest customer life time value, while customers with Luxury Car and Luxury SUV have highest value. 
+The charts show most of customer own a four-door car, least of customer own Luxury car, response of Yes is seen similarly.
+Customers owning an Sport car have highest probibality of accept renewal offer, while those owning an Luxury car have lowest probability of Yes response.
+ 
+### Sales.Channel
+```{r}
+# Sales Channel with CLV:
+pivot(data = Insurance_df, compute = c(mean,sum), variable = Customer.Lifetime.Value, by = Sales.Channel)
+boxplot(Insurance_df$Customer.Lifetime.Value ~ Insurance_df$Sales.Channel, xlab = "Sales Channel", ylab = "Customer Lifetime Value", log = 'y' )
+
+
+# Sales Channel with Response:
+Insurance_df %>%
+  count(Response,Sales.Channel) #Pivot table for Response and Sales Channel
+
+Channel.Plot1 <- ggplot(Insurance_df, aes(x = Sales.Channel, fill = Response)) + 
+  geom_bar(position = "dodge")+labs(y="Count of Response",title="Reponses by different Sales Channel")
+
+Channel.Plot2 <-ggplot(Insurance_df, aes(x = Sales.Channel, y = length(Response), fill = Response)) +
+  geom_col(position = "fill") +labs (y="Proportion of Reponse") #Proportion between YES and NO
+grid.arrange(Channel.Plot1, Channel.Plot2, ncol=2)
+```
+
+The plot shows customer lifetime values through web channel is lowest, but overall there are not much difference. 
+The chart shows most of customers buying insurance and accept renewal offer via Agent and a few buying and renew via web. Propotion of Yes via Agent is highest, while others three channel is quite similar.
+
+### Vehicle.Size
+```{r}
+# Vehicle Size with CLV:
+pivot(data = Insurance_df, compute = c(mean,sum), variable = Customer.Lifetime.Value, by = Vehicle.Size)
+boxplot(Insurance_df$Customer.Lifetime.Value ~ Insurance_df$Vehicle.Size, xlab = "Vehicle Size", ylab = "Customer Lifetime Value", log = 'y' )
+
+
+# Vehicle Size with Response:
+Insurance_df %>%
+  count(Response,Vehicle.Size) #Pivot table for Response and Vehicle Size
+
+VehicleSize.Plot1 <- ggplot(Insurance_df, aes(x = Vehicle.Size, fill = Response)) + 
+  geom_bar(position = "dodge")+labs(y="Count of Response",title="Reponses by different Vehicle Size")
+
+VehicleSize.Plot2 <-ggplot(Insurance_df, aes(x = Vehicle.Size, y = length(Response), fill = Response)) +
+  geom_col(position = "fill") +labs (y="Proportion of Reponse") #Proportion between YES and NO
+grid.arrange(VehicleSize.Plot1, VehicleSize.Plot2, ncol=2)
+```
+
+The plot shows customer lifetime value is not much affected by Vehicle Size. 
+The charts show most of customer using Medium Vehicle, the least is using large vehicle, number response of Yes is seen similarly.
+Customers who use large vehicle have highest probability of accepting renewal offer, while customers who use small vehicle have lowest probability.
+ 
+```{r}
+# Save the cleaned data to another file for using later.
+# write.csv(Insurance_df,"Clean_df2.csv", row.names = F)
+```
+
+
+
+ 
